@@ -31,7 +31,10 @@ class ITZ_FS_XMLHelper
 	{
 		auto attr = tag.GetAttribute(name);
 		if (attr)
-            return attr.ValueAsBool();
+        {
+			string boolStr = attr.ValueAsString();
+			return boolStr == "1";
+		}
 			
 		return defaultValue;
 	}
@@ -50,6 +53,7 @@ class ITZ_FS_XMLHelper
 		auto children = tag.GetTag(type);
 		if (children.Count() > 0)
 			return children[0].GetContent().GetContent().ToFloat();
+
 		return defaultValue;
 	}
 
@@ -58,6 +62,15 @@ class ITZ_FS_XMLHelper
 		auto children = tag.GetTag(type);
 		if (children.Count() > 0)
 			return GetAttributeString(children[0], attributeName, defaultValue);
+		return defaultValue;
+	}
+
+	static float GetTagContentAttributeFloat(CF_XML_Tag tag, string type, string attributeName, float defaultValue = 0)
+	{
+		auto children = tag.GetTag(type);
+		if (children.Count() > 0)
+			return GetAttributeFloat(children[0], attributeName, defaultValue);
+			
 		return defaultValue;
 	}
 }

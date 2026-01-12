@@ -1,4 +1,3 @@
-
 class ITZ_FS_FuelStation
 {
     string m_ID;
@@ -8,7 +7,16 @@ class ITZ_FS_FuelStation
     ref array<ref ITZ_FS_FuelProfile> m_Fuels;
 
     [NonSerialized()]
+    ref Timer m_RespawnTimer;
+
+    [NonSerialized()]
     bool m_SynchDirty;
+
+    void ITZ_FS_FuelStation()
+    {
+        m_Fuels = new array<ref ITZ_FS_FuelProfile>();
+        m_SynchDirty = false;
+    }
 
     void AddFuelProfile(ITZ_FS_FuelProfile profile)
     {
@@ -96,7 +104,6 @@ class ITZ_FS_FuelStation
 
     void IncrementFuelQuantities()
     {
-
         foreach (ITZ_FS_FuelProfile profile: m_Fuels)
         {
             if (profile && !profile.IsFull())
@@ -107,7 +114,7 @@ class ITZ_FS_FuelStation
                 float minIncrement = profile.GetMin();
                 float maxIncrement = profile.GetMax();
                 float increment = Math.RandomIntInclusive(minIncrement, maxIncrement);
-
+                Print("IncrementFuelQuantities: Incrementando combustível do tipo " + profile.GetFuelType() + " em " + increment + " litros. Quantidade atual: " + currentQuantity + "/" + capacity);
                 profile.AddQuantity(increment);
                 SetSynchDirty();
             }
@@ -133,6 +140,48 @@ class ITZ_FS_FuelStation
     {
         return m_Variables;
     }
+
+    void RespawnFuels()
+    {
+        if(m_Variables.m_RespawnFuels)
+        {
+            Print("RespawnFuels: Iniciando respawn de combustível para a estação " + m_ID);
+            if (m_RespawnTimer)
+                m_RespawnTimer.Stop();
+
+            float interval = m_Variables.m_RespawnInterval;
+            if(interval <= 10)
+                interval = 10.0;
+
+            m_RespawnTimer = new Timer(CALL_CATEGORY_GAMEPLAY);
+            m_RespawnTimer.Run(interval, this, "IncrementFuelQuantities", null, true);
+        }
+        else
+        {
+            Print("RespawnFuels: Respawn de combustível desativado para a estação " + m_ID);
+            foreach (ITZ_FS_FuelProfile profile: m_Fuels)
+            {
+                if (profile)
+                {
+                    float capacity = profile.GetCapacity();
+
+                    float minIncrement = profile.GetMin();
+                    float maxIncrement = profile.GetMax();
+                    float increment = Math.RandomIntInclusive(minIncrement, maxIncrement);
+
+                    if(increment > capacity)
+                        increment = capacity;
+
+                    profile.SetQuantity(increment);
+                    Print("RespawnFuels: Definindo quantidade inicial de combustível do tipo " + profile.GetFuelType() + " para " + increment + " litros.");
+                    
+                    SetSynchDirty();
+                }
+            }
+        }
+
+       
+    }
 }
 
 class ITZ_FS_FuelStationVariables
@@ -144,4 +193,14 @@ class ITZ_FS_FuelStationVariables
     bool m_RespawnFuels;
     bool m_CanUseDestroyed;
     bool m_CanMeasure;
+
+    void ITZ_FS_FuelStationVariables()
+    {
+        m_RespawnInterval = 300.0;
+        m_MaxRange = 50.0;
+        m_RequiresEnergy = true;
+        m_RespawnFuels = true;
+        m_CanUseDestroyed = true;
+        m_CanMeasure = true;
+    }
 }

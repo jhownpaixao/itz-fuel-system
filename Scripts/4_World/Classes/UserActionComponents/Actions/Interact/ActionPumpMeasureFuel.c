@@ -28,13 +28,10 @@ class ITZ_FS_ActionPumpMeasureFuelBase : ActionInteractBase
 
 	override bool ActionCondition( PlayerBase player, ActionTarget target, ItemBase item )
 	{	
-		if(!ITZ_FS_Module.GetModule().GetSettings().m_CanMeasureFuel)
-			return false;
-
 		if (player.GetItemInHands())
 			return false;
 
-        if (Class.CastTo(m_Station, target.GetParent()) || Class.CastTo(m_Station, target.GetObject()))
+        if ((Class.CastTo(m_Station, target.GetParent()) || Class.CastTo(m_Station, target.GetObject())) && m_Station.CanMeasureFuel())
 			return true;
 
 		return false;

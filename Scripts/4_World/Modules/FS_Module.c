@@ -17,6 +17,10 @@ class ITZ_FS_Module : CF_ModuleWorld
     void ITZ_FS_Module()
     {
         m_Instance = this;
+		m_SaveDirty = false;
+        m_SaveCheckElapsed = 0.0;
+        m_UpdateCheckElapsed = 0.0;
+        m_FuelIncrementElapsed = 0.0;
     }
 
     static ITZ_FS_Module GetModule()
@@ -40,8 +44,6 @@ class ITZ_FS_Module : CF_ModuleWorld
         EnableMissionFinish();
         EnableMissionStart();
         EnableUpdate();
-
-        
         #endif
 
         ITZ_FS_Logger.Info("Iniciando módulo principal");
@@ -81,12 +83,6 @@ class ITZ_FS_Module : CF_ModuleWorld
         SyncToClient(playerArgs.Identity);
     }
 
-    override void OnMissionFinish(Class sender, CF_EventArgs args)
-    {
-        super.OnMissionFinish(sender, args);
-        SaveStationProfiles();
-    }
-
     override void OnUpdate(Class sender, CF_EventArgs args)
     {
         super.OnUpdate(sender, args);
@@ -105,22 +101,39 @@ class ITZ_FS_Module : CF_ModuleWorld
         if (m_SaveCheckElapsed >= m_Settings.m_DataSaveInterval && m_SaveDirty)
         {
             m_SaveCheckElapsed = 0.0;
-            SaveStationProfiles();
-        }
-
-        if( m_FuelIncrementElapsed >= m_Settings.m_FuelRespawnInterval )
-        {
-            m_FuelIncrementElapsed = 0.0;
-            foreach (ITZ_FS_FuelStation station: m_Stations)
-            {
-                if (station)
-                {
-                    station.IncrementFuelQuantities();
-                }
-            }
+            SaveStates();
         }
     }
+
+    void SaveStates()
+    {
+        ITZ_FS_Logger.Info("Salvando estados das estações de combustível.");
+
+        map<string, ref map<string, float>> quantityMap = new map<string, ref map<string, float>>();
+
+        for (int i = 0; i < m_Stations.Count(); i++)
+        {
+            ITZ_FS_FuelStation station = m_Stations[i];
+            if (!station) continue;
+
+            map<string, float> fuelQuantities = new map<string, float>();
+            for (int j = 0; j < station.GetFuels().Count(); j++)
+            {
+                ITZ_FS_FuelProfile fuelProfile = station.GetFuels()[j];
+                if (!fuelProfile) continue;
+
+                fuelQuantities.Insert(fuelProfile.GetFuelType(), fuelProfile.GetQuantity());
+            }
+
+            quantityMap.Insert(station.GetId(), fuelQuantities);
+        }
+
+        JsonFileLoader<map<string, ref map<string, float>>>.JsonSaveFile(ITZ_FS_Constants.PERSISTENT_FILE, quantityMap);
+
+        m_SaveDirty = false;
+    }
     #endif
+    
 
     override int GetRPCMin()
     {
@@ -150,9 +163,59 @@ class ITZ_FS_Module : CF_ModuleWorld
 
     void RPC_OnClientSync(ParamsReadContext ctx, PlayerIdentity senderRPC, Object target)
     {
+
+        // m_Stations = new array<ref ITZ_FS_FuelStation>();
+        
+        // int stationCount;
+        // ctx.Read(stationCount);
+
+        // for (int i = 0; i < stationCount; i++)
+        // {
+        //     ITZ_FS_FuelStation station = new ITZ_FS_FuelStation();
+
+        //     ctx.Read(station.m_ID);
+        //     ctx.Read(station.m_Position);
+        //     ctx.Read(station.m_Variables);
+
+        //     int fuelCount;
+        //     ctx.Read(fuelCount);
+        //     for (int j = 0; j < fuelCount; j++)
+        //     {
+        //         ITZ_FS_FuelProfile profile = station.m_Fuels[j];
+        //         ctx.Read(profile);
+
+        //         station.m_Fuels.Insert(profile);
+        //     }
+
+        //     Print("RPC_OnClientSync: Estação sincronizada: " + station.GetId());
+        //     m_Stations.Insert(station);
+        // }
+
+        
+        // m_VehicleProfiles = new array<ref ITZ_FS_VehicleProfile>();
+
+        // int vehicleProfileCount;
+        // ctx.Read(vehicleProfileCount);
+
+        // for (int k = 0; k < vehicleProfileCount; k++)
+        // {
+        //     ITZ_FS_VehicleProfile vProfile;
+        //     ctx.Read(vProfile);
+
+        //     Print("RPC_OnClientSync: Perfil de veículo sincronizado: " + vProfile.m_Classname);
+        //     m_VehicleProfiles.Insert(vProfile);
+        // }
+
+        // ctx.Read(m_Settings);
+
         ctx.Read(m_Stations);
         ctx.Read(m_VehicleProfiles);
         ctx.Read(m_Settings);
+
+        for (int i = 0; i < m_Stations.Count(); i++)
+        {
+            LogFuelStation(m_Stations[i]);
+        }
 
         ITZ_FS_Logger.Debug("RPC_OnClientSync: Estações de combustível sincronizadas com o cliente: " + m_Stations.Count());
         ITZ_FS_Logger.Debug("RPC_OnClientSync: Perfis de veículos sincronizados com o cliente: " + m_VehicleProfiles.Count());
@@ -204,10 +267,10 @@ class ITZ_FS_Module : CF_ModuleWorld
 
         if (document)
 		{
-            CF_XML_Tag root = document.Get("statations")[0];
+            CF_XML_Tag root = document.Get("stations")[0];
             if (!root)
 			{
-				CF.FormatError("No root tag 'statations' in '%1'", ITZ_FS_Constants.STATION_FILE);
+				CF.FormatError("No root tag 'stations' in '%1'", ITZ_FS_Constants.STATION_FILE);
 				return;
 			}
 
@@ -216,8 +279,8 @@ class ITZ_FS_Module : CF_ModuleWorld
             m_GlobalStationVariables = new ITZ_FS_FuelStationVariables();
             if(defaults)
             {
-                m_GlobalStationVariables.m_RespawnInterval = ITZ_FS_XMLHelper.GetAttributeFloat(defaults, "respawntime", 300.0);
-                m_GlobalStationVariables.m_MaxRange = ITZ_FS_XMLHelper.GetAttributeFloat(defaults, "range", 100.0);
+                m_GlobalStationVariables.m_RespawnInterval = ITZ_FS_XMLHelper.GetTagContentAttributeFloat(defaults, "respawntime", "value", 300.0);
+                m_GlobalStationVariables.m_MaxRange = ITZ_FS_XMLHelper.GetTagContentAttributeFloat(defaults, "range", "value", 100.0);
                 
                 //global flags
                 CF_XML_Tag gFlags = defaults.GetTag("flags")[0];
@@ -249,8 +312,8 @@ class ITZ_FS_Module : CF_ModuleWorld
 
                 //!variables
                 ITZ_FS_FuelStationVariables variables = new ITZ_FS_FuelStationVariables();
-                variables.m_RespawnInterval = ITZ_FS_XMLHelper.GetTagContentFloat(stationTag, "respawntime", m_GlobalStationVariables.m_RespawnInterval);
-                variables.m_MaxRange =  ITZ_FS_XMLHelper.GetTagContentFloat(stationTag, "range", m_GlobalStationVariables.m_MaxRange) ;
+                variables.m_RespawnInterval = ITZ_FS_XMLHelper.GetTagContentAttributeFloat(stationTag, "respawntime", "value", m_GlobalStationVariables.m_RespawnInterval);
+                variables.m_MaxRange =  ITZ_FS_XMLHelper.GetTagContentAttributeFloat(stationTag, "range", "value", m_GlobalStationVariables.m_MaxRange);
                 variables.m_RequiresEnergy = m_GlobalStationVariables.m_RequiresEnergy;
                 variables.m_RespawnFuels = m_GlobalStationVariables.m_RespawnFuels;
                 variables.m_CanUseDestroyed = m_GlobalStationVariables.m_CanUseDestroyed;
@@ -302,7 +365,10 @@ class ITZ_FS_Module : CF_ModuleWorld
                     station.GetFuels().Insert(fuelProfile);
                 }
 
+                station.RespawnFuels(); // timeout ou restart
                 m_Stations.Insert(station);
+
+                LogFuelStation(station);
             }
         }   
 
@@ -315,22 +381,35 @@ class ITZ_FS_Module : CF_ModuleWorld
         ITZ_FS_Logger.Info("LoadStationProfiles: Estações de combustível carregadas: " + m_Stations.Count());
 
         m_GlobalStationVariables = new ITZ_FS_FuelStationVariables();
-        m_GlobalStationVariables.m_RespawnInterval = m_Settings.m_FuelRespawnInterval;
-        m_GlobalStationVariables.m_MaxRange = m_Settings.m_FuelStationRange;
-        m_GlobalStationVariables.m_RequiresEnergy = m_Settings.m_FuelPumpRequiresPower;
+        m_GlobalStationVariables.m_RespawnInterval = m_Settings.old_FuelRespawnInterval;
+        m_GlobalStationVariables.m_MaxRange = m_Settings.old_FuelStationRange;
+        m_GlobalStationVariables.m_RequiresEnergy = m_Settings.old_FuelPumpRequiresPower;
         m_GlobalStationVariables.m_RespawnFuels = true;
-        m_GlobalStationVariables.m_CanUseDestroyed = m_Settings.m_UseDestroyedPump;
-        m_GlobalStationVariables.m_CanMeasure = m_Settings.m_CanMeasureFuel;
+        m_GlobalStationVariables.m_CanUseDestroyed = m_Settings.old_UseDestroyedPump;
+        m_GlobalStationVariables.m_CanMeasure = m_Settings.old_CanMeasureFuel;
 
         for (int i = 0; i < m_Stations.Count(); i++)
         {
             ITZ_FS_FuelStation station = m_Stations[i];
             if (!station) continue;
 
+            for (int j = 0; j < station.GetFuels().Count(); j++)
+            {
+                ITZ_FS_FuelProfile fuelProfile = station.GetFuels()[j];
+                if (!fuelProfile) continue;
+
+                // migrate min/max respawn values
+                
+                fuelProfile.SetMin(fuelProfile.m_MinLiquidRespawn);
+                fuelProfile.SetMax(fuelProfile.m_MaxLiquidRespawn);
+            }
+
             station.SetVariables(m_GlobalStationVariables);
         }
 
         SaveStationProfiles();
+
+        DeleteFile(ITZ_FS_Constants.OLD_STATION_FILE);
     }
 
     void LoadVehicleProfiles()
@@ -380,6 +459,8 @@ class ITZ_FS_Module : CF_ModuleWorld
 
         ITZ_FS_Logger.Info("LoadVehicleProfiles: Perfis de veículos migrados para o novo formato: " + m_VehicleProfiles.Count());
         OnVehicleProfileLoaded();
+
+        DeleteFile(ITZ_FS_Constants.OLD_VEHICLE_PROFILE_FILE);
     }
 
     void OnVehicleProfileLoaded()
@@ -415,7 +496,7 @@ class ITZ_FS_Module : CF_ModuleWorld
         map<string, ref map<string, float>> quantityMap = new map<string, ref map<string, float>>();
 
         CF_XML_Document document = new CF_XML_Document();
-        CF_XML_Tag root = document.CreateTag("statations");
+        CF_XML_Tag root = document.CreateTag("stations");
 
         //! defaults
         CF_XML_Tag defaults = root.CreateTag("defaults");
@@ -455,8 +536,11 @@ class ITZ_FS_Module : CF_ModuleWorld
         gCanMeasure.SetValue(canMeasureValue);
 
         //! stations
-        foreach (ITZ_FS_FuelStation station: m_Stations)
+        for(int i = 0; i < m_Stations.Count(); i++)
         {
+            ITZ_FS_FuelStation station = m_Stations[i];
+            if (!station) continue;
+
             CF_XML_Tag stationTag = root.CreateTag("station");
 
             CF_XML_Attribute nameAttr = stationTag.CreateAttribute("name");
@@ -466,44 +550,46 @@ class ITZ_FS_Module : CF_ModuleWorld
             vector pos = station.GetPosition();
             posAttr.SetValue(pos.ToString(false));
 
-            CF_XML_Tag respawnTime = stationTag.CreateTag("respawntime");
-            CF_XML_Attribute respawnTimeAttr = respawnTime.CreateAttribute("value");
-            respawnTimeAttr.SetValue("300"); // segundos
+            // CF_XML_Tag respawnTime = stationTag.CreateTag("respawntime");
+            // CF_XML_Attribute respawnTimeAttr = respawnTime.CreateAttribute("value");
+            // respawnTimeAttr.SetValue("300"); // segundos
 
-            CF_XML_Tag range = stationTag.CreateTag("range");
-            CF_XML_Attribute rangeAttr = range.CreateAttribute("value");
-            rangeAttr.SetValue("50.0");
+            // CF_XML_Tag range = stationTag.CreateTag("range");
+            // CF_XML_Attribute rangeAttr = range.CreateAttribute("value");
+            // rangeAttr.SetValue("50.0");
 
-            // flags
-            CF_XML_Tag flags = stationTag.CreateTag("flags");
+            // // flags
+            // CF_XML_Tag flags = stationTag.CreateTag("flags");
 
-            CF_XML_Attribute requireEnergy = flags.CreateAttribute("require_energy");
-            requireEnergy.SetValue("1");
-            CF_XML_Attribute respawnFuel = flags.CreateAttribute("respawn_fuel");
-            respawnFuel.SetValue("1");
-            CF_XML_Attribute useDestroyed = flags.CreateAttribute("use_destroyed");
-            useDestroyed.SetValue("1");
-            CF_XML_Attribute canMeasure = flags.CreateAttribute("can_measure");
-            canMeasure.SetValue("1");
+            // CF_XML_Attribute requireEnergy = flags.CreateAttribute("require_energy");
+            // requireEnergy.SetValue("1");
+            // CF_XML_Attribute respawnFuel = flags.CreateAttribute("respawn_fuel");
+            // respawnFuel.SetValue("1");
+            // CF_XML_Attribute useDestroyed = flags.CreateAttribute("use_destroyed");
+            // useDestroyed.SetValue("1");
+            // CF_XML_Attribute canMeasure = flags.CreateAttribute("can_measure");
+            // canMeasure.SetValue("1");
 
             // fuels
             map<string, float> fuelQuantities = new map<string, float>();
-
-            foreach (ITZ_FS_FuelProfile fuelProfile: station.GetFuels())
+            for(int j = 0; j < station.GetFuels().Count(); j++)
             {
+                ITZ_FS_FuelProfile fuelProfile = station.GetFuels()[j];
+                if(!fuelProfile) continue;
+
                 CF_XML_Tag fuelTag = stationTag.CreateTag("fuel");
 
-                CF_XML_Tag typeTag = fuelTag.CreateTag("type");
-                typeTag.GetContent().SetContent(fuelProfile.GetFuelType());
+                CF_XML_Attribute typeTag = fuelTag.CreateAttribute("type");
+                typeTag.SetValue(fuelProfile.GetFuelType());
 
-                CF_XML_Tag capacityTag = fuelTag.CreateTag("capacity");
-                capacityTag.GetContent().SetContent(fuelProfile.GetCapacity().ToString());
+                CF_XML_Attribute capacityTag = fuelTag.CreateAttribute("capacity");
+                capacityTag.SetValue(fuelProfile.GetCapacity().ToString());
 
-                CF_XML_Tag minTag = fuelTag.CreateTag("min");
-                minTag.GetContent().SetContent(fuelProfile.GetMin().ToString());
+                CF_XML_Attribute minTag = fuelTag.CreateAttribute("min");
+                minTag.SetValue(fuelProfile.GetMin().ToString());
 
-                CF_XML_Tag maxTag = fuelTag.CreateTag("max");
-                maxTag.GetContent().SetContent(fuelProfile.GetMax().ToString());
+                CF_XML_Attribute maxTag = fuelTag.CreateAttribute("max");
+                maxTag.SetValue(fuelProfile.GetMax().ToString());
 
                 fuelQuantities.Insert(fuelProfile.GetFuelType(), fuelProfile.GetQuantity());
             }
@@ -570,6 +656,38 @@ class ITZ_FS_Module : CF_ModuleWorld
         ITZ_FS_Logger.Debug("Sincronizando dados com o cliente: " + identity.GetName());
 
         ScriptRPC rpc = new ScriptRPC();
+
+        
+        // rpc.Write(m_Stations.Count());
+        // for (int i = 0; i < m_Stations.Count(); i++)
+        // {
+        //     ITZ_FS_FuelStation station = m_Stations[i];
+        //     rpc.Write(station.m_ID);
+        //     rpc.Write(station.m_Position);
+        //     rpc.Write(station.m_Variables);
+
+        //     rpc.Write(station.m_Fuels.Count());
+        //     for (int j = 0; j < station.m_Fuels.Count(); j++)
+        //     {
+        //         ITZ_FS_FuelProfile profile = station.m_Fuels[j];
+        //         rpc.Write(profile);
+        //     }
+
+        //     Print("Syncing station: " + station.GetId());
+        // }
+
+        // rpc.Write(m_VehicleProfiles.Count());
+        // for (int l = 0; l < m_VehicleProfiles.Count(); l++)
+        // {
+        //     ITZ_FS_VehicleProfile vProfile = m_VehicleProfiles[l];
+        //     Print("Syncing vehicle profile: " + vProfile.m_Classname);
+        //     rpc.Write(vProfile);
+        // }
+
+        // Print("Syncing settings");
+        // rpc.Write(m_Settings);
+
+
         rpc.Write(m_Stations);
         rpc.Write(m_VehicleProfiles);
         rpc.Write(m_Settings);
@@ -623,11 +741,9 @@ class ITZ_FS_Module : CF_ModuleWorld
 
     ITZ_FS_FuelStation GetStationProfileAtPosition(vector pos)
     {
-        ITZ_FS_FuelStation profile;
-
         foreach (ITZ_FS_FuelStation station: m_Stations)
         {
-            if (station && Math.IsPointInCircle(station.GetPosition(), m_Settings.m_FuelStationRange, pos))
+            if (station && Math.IsPointInCircle(station.GetPosition(), station.m_Variables.m_MaxRange, pos))
                 return station;
 		}
 
@@ -721,10 +837,16 @@ class ITZ_FS_Module : CF_ModuleWorld
 
     array<FuelStation> GetFuelPumpsAtPosition(vector position)
     {
+        ITZ_FS_FuelStation stationProfile = GetStationProfileAtPosition(position);
+        
+        if (!stationProfile)
+            return new array<FuelStation>;
+        
+
         array<FuelStation> stations = new array<FuelStation>;
         
         array<Object> objects = new array<Object>;
-        GetGame().GetObjectsAtPosition(position, m_Settings.m_FuelStationRange, objects, null);
+        GetGame().GetObjectsAtPosition(position, stationProfile.m_Variables.m_MaxRange, objects, null);
 
         foreach (Object obj: objects)
         {
@@ -738,11 +860,19 @@ class ITZ_FS_Module : CF_ModuleWorld
 
     void LogFuelStation(ITZ_FS_FuelStation station)
     {
+        return;
         if (station)
         {
             ITZ_FS_Logger.Trace("LogFuelStation: Station ID: " + station.GetId());
             ITZ_FS_Logger.Trace("LogFuelStation: Station Position: " + station.GetPosition());
             ITZ_FS_Logger.Trace("LogFuelStation: Station Fuel Profiles: " + station.GetFuels().Count());
+
+            ITZ_FS_Logger.Trace("LogFuelStation: Station Variables - Respawn Interval: " + station.m_Variables.m_RespawnInterval);
+            ITZ_FS_Logger.Trace("LogFuelStation: Station Variables - Max Range: " + station.m_Variables.m_MaxRange);
+            ITZ_FS_Logger.Trace("LogFuelStation: Station Variables - Requires Energy: " + station.m_Variables.m_RequiresEnergy);
+            ITZ_FS_Logger.Trace("LogFuelStation: Station Variables - Respawn Fuels: " + station.m_Variables.m_RespawnFuels);
+            ITZ_FS_Logger.Trace("LogFuelStation: Station Variables - Can Use Destroyed: " + station.m_Variables.m_CanUseDestroyed);
+            ITZ_FS_Logger.Trace("LogFuelStation: Station Variables - Can Measure: " + station.m_Variables.m_CanMeasure);
 
             foreach (ITZ_FS_FuelProfile profile: station.GetFuels())
             {

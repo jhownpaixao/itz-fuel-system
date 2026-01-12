@@ -132,8 +132,13 @@ modded class FuelStation
 
 	bool HasEnergy()
 	{
-		if(ITZ_FS_Module.GetModule().GetSettings().m_FuelPumpRequiresPower)
-			return m_HasEnergy;
+		if(ITZ_FS_Module.GetModule())
+		{
+			ITZ_FS_FuelStation profile = ITZ_FS_Module.GetModule().GetStationProfileAtPosition(GetWorldPosition());
+			
+			if(profile && profile.m_Variables.m_RequiresEnergy)
+				return m_HasEnergy;	
+		}
 
 		return true;
 	}
@@ -196,9 +201,30 @@ modded class FuelStation
 
 	bool HasDestroyed()
 	{
-		if(ITZ_FS_Module.GetModule().GetSettings().m_UseDestroyedPump) // pode usar bomba destruida
-			return false;
+		if(ITZ_FS_Module.GetModule())
+		{
+			ITZ_FS_FuelStation profile = ITZ_FS_Module.GetModule().GetStationProfileAtPosition(GetWorldPosition());
+			
+			if(profile && profile.m_Variables.m_CanUseDestroyed)
+				return false;	
+		}
 
 		return IsDamageDestroyed();
+	}
+
+	bool CanMeasureFuel()
+	{
+		if(HasDestroyed())
+			return false;
+
+		if(ITZ_FS_Module.GetModule())
+		{
+			ITZ_FS_FuelStation profile = ITZ_FS_Module.GetModule().GetStationProfileAtPosition(GetWorldPosition());
+			
+			if(profile)
+				return profile.m_Variables.m_CanMeasure;	
+		}
+
+		return true;
 	}
 }

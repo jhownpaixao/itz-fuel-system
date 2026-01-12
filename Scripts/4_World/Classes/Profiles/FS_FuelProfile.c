@@ -11,6 +11,10 @@ class ITZ_FS_FuelProfile
     [NonSerialized()]
     bool m_SynchDirty;
 
+    //!@deprecated - usar m_Min e m_Max
+    float m_MinLiquidRespawn;
+    float m_MaxLiquidRespawn;
+
     void AddQuantity(float quantity)
     {
         if((m_Quantity + quantity) >= m_Capacity)

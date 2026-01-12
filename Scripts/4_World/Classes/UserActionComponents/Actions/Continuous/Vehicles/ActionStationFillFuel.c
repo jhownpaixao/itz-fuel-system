@@ -90,7 +90,7 @@ class ITZ_FS_ActionStationFillFuelBase: ActionContinuousBase
 
 		if(m_Station)
         	ITZ_FS_Logger.Trace("ActionCondition: Estação de combustível encontrada: " + m_Station + " destruída: " + m_Station.HasDestroyed() + " energia: " + m_Station.HasEnergy() + " tipo de combustível: " + m_FuelType);
-
+		
 		if ( !m_Station || m_Station.HasDestroyed() || !m_Station.HasEnergy() || !m_Station.HasFuel(m_FuelType))
 			return false;
 
