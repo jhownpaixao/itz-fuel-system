@@ -212,11 +212,6 @@ class ITZ_FS_Module : CF_ModuleWorld
         ctx.Read(m_VehicleProfiles);
         ctx.Read(m_Settings);
 
-        for (int i = 0; i < m_Stations.Count(); i++)
-        {
-            LogFuelStation(m_Stations[i]);
-        }
-
         ITZ_FS_Logger.Debug("RPC_OnClientSync: Estações de combustível sincronizadas com o cliente: " + m_Stations.Count());
         ITZ_FS_Logger.Debug("RPC_OnClientSync: Perfis de veículos sincronizados com o cliente: " + m_VehicleProfiles.Count());
         ITZ_FS_Logger.Debug("RPC_OnClientSync: Configurações sincronizadas com o cliente");
@@ -368,7 +363,6 @@ class ITZ_FS_Module : CF_ModuleWorld
                 station.RespawnFuels(); // timeout ou restart
                 m_Stations.Insert(station);
 
-                LogFuelStation(station);
             }
         }   
 
